@@ -2,7 +2,7 @@ name: Run World Bank Scraper Daily
 
 on:
   schedule:
-    - cron: "0 1 * * *"  # Runs every day at 01:00 UTC
+    - cron: "0 1 * * *"  # Every day at 01:00 UTC
   workflow_dispatch:
 
 jobs:
@@ -29,18 +29,5 @@ jobs:
         ${{ secrets.GOOGLE_CREDENTIALS }}
         EOF
 
-    - name: Download previous Excel artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: latest-worldbank-data
-        path: .
-      continue-on-error: true
-
     - name: Run main Python script
       run: python main.py
-
-    - name: Upload updated Excel file
-      uses: actions/upload-artifact@v4
-      with:
-        name: latest-worldbank-data
-        path: worldbank_current_opportunities.xlsx
