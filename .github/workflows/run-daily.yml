@@ -3,14 +3,14 @@ name: Run World Bank Scraper Daily
 on:
   schedule:
     - cron: "0 1 * * *"  # Runs every day at 01:00 UTC
-  workflow_dispatch:
+  workflow_dispatch:       # Allows manual triggering from GitHub
 
 jobs:
   run-script:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repo
+    - name: Checkout repository
       uses: actions/checkout@v3
 
     - name: Set up Python
@@ -34,11 +34,13 @@ jobs:
       with:
         name: latest-worldbank-data
         path: .
-      continue-on-error: true  # In case this is the first run
+      continue-on-error: true  # Won't fail if first run
 
-    - name: Run script
-      run: |
-        python main.py
+    - name: Debug: list downloaded files
+      run: ls -lah
+
+    - name: Run main Python script
+      run: python main.py
 
     - name: Upload updated Excel file
       uses: actions/upload-artifact@v4
