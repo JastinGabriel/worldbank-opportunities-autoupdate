@@ -1,21 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[17]:
-
-
-pip install gspread gspread_dataframe oauth2client
-
-
-# In[18]:
-
-
-pip install gspread oauth2client
-
-
-# In[8]:
-
-
 import os
 import requests
 import pandas as pd
