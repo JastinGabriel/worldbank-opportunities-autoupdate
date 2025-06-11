@@ -23,9 +23,11 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Write credentials to file
+    - name: Write Google credentials to file
       run: |
-        echo "${{ secrets.GOOGLE_CREDENTIALS }}" > google_service_account.json
+        cat <<EOF > google_service_account.json
+        ${{ secrets.GOOGLE_CREDENTIALS }}
+        EOF
 
     - name: Run script
       run: |
