@@ -1,30 +1,32 @@
 import os
 import requests
 import pandas as pd
-from datetime import datetime, date
+from datetime import datetime
 import time
 
-EXCEL_FILE = "worldbank_current_opportunities.xlsx"
+import gspread
+from gspread_dataframe import set_with_dataframe, get_as_dataframe
+from oauth2client.service_account import ServiceAccountCredentials
 
-# --- Step 1: Load previous data and clean expired ---
-if os.path.exists(EXCEL_FILE):
-    df_existing = pd.read_excel(EXCEL_FILE)
+# --- Step 1: Load existing data from Google Sheet ---
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1UQ0AXeDLFEAbGohuy9GTaX67LQnQ9ZkFi6mLgKOy7Ec/edit"
+SHEET_NAME = "Sheet1"
 
-    # Remove any section labels accidentally saved as rows
-    if 'id' in df_existing.columns:
-        df_existing = df_existing[~df_existing['id'].astype(str).str.lower().isin(['new news', 'existing news'])]
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+creds = ServiceAccountCredentials.from_json_keyfile_name("google_service_account.json", scope)
+client = gspread.authorize(creds)
+spreadsheet = client.open_by_url(GOOGLE_SHEET_URL)
+worksheet = spreadsheet.worksheet(SHEET_NAME)
 
-    # 🧹 Remove expired opportunities regardless of section
-    if 'Submission Deadline' in df_existing.columns:
-        df_existing['Submission Deadline'] = pd.to_datetime(df_existing['Submission Deadline'], errors='coerce')
-        before_cleanup = len(df_existing)
-        df_existing = df_existing[df_existing['Submission Deadline'] >= pd.to_datetime(date.today())]
-        after_cleanup = len(df_existing)
-        print(f"🧹 Removed {before_cleanup - after_cleanup} expired records from previous data.")
-else:
-    df_existing = pd.DataFrame()
+# Load existing Google Sheet data into DataFrame
+df_existing = get_as_dataframe(worksheet, evaluate_formulas=True)
+df_existing = df_existing.dropna(how="all").dropna(axis=1, how="all")
 
-# --- Step 2: Pull fresh data ---
+# Remove section labels if present
+if 'id' in df_existing.columns:
+    df_existing = df_existing[~df_existing['id'].astype(str).str.lower().isin(['new news', 'existing news'])]
+
+# --- Step 2: Pull fresh data from World Bank API ---
 BASE_URL = "https://search.worldbank.org/api/v2/procnotices"
 PARAMS = {
     "format": "json",
@@ -63,7 +65,6 @@ while page_count < MAX_PAGES and len(notices_data) < MAX_RECORDS:
         if deadline < datetime.now():
             continue  # skip expired
 
-        # Compose new record
         new_record = {
             "id": notice.get("id", ""),
             "Notice": notice.get("bid_description", ""),
@@ -92,55 +93,24 @@ if not df_existing.empty and 'id' in df_existing.columns:
 else:
     df_filtered_new = df_new.copy()
 
-# --- Step 4: Create final Excel output with section labels ---
+# --- Step 4: Build final DataFrame with section headers ---
 rows = []
 
-# Add "New News" section
 if not df_filtered_new.empty:
     rows.append(["New News"] + [""] * (df_filtered_new.shape[1] - 1))
     rows.extend(df_filtered_new.values.tolist())
 
-# Add "Existing News" section
 if not df_existing.empty:
     rows.append(["Existing News"] + [""] * (df_existing.shape[1] - 1))
     rows.extend(df_existing.values.tolist())
 
-# Define full column headers
 columns = df_new.columns if not df_new.empty else df_existing.columns
-
-# Final DataFrame
 df_final = pd.DataFrame(rows, columns=columns)
 
-# --- Step 5: Export ---
-df_final.to_excel(EXCEL_FILE, index=False)
-
-print(f"✅ Added {len(df_filtered_new)} new records on top of {len(df_existing)} existing records.")
-print(f"✅ Exported updated data to '{EXCEL_FILE}'")
-
-
-# In[9]:
-
-
-import pandas as pd
-import gspread
-from gspread_dataframe import set_with_dataframe
-from oauth2client.service_account import ServiceAccountCredentials
-
-# Load Excel file into DataFrame
-df = pd.read_excel("worldbank_current_opportunities.xlsx")
-
-# Set up credentials
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("google_service_account.json", scope)
-client = gspread.authorize(creds)
-
-# Open an existing Google Sheet by **URL**
-spreadsheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1UQ0AXeDLFEAbGohuy9GTaX67LQnQ9ZkFi6mLgKOy7Ec/edit")  # Replace with your actual URL
-worksheet = spreadsheet.worksheet("Sheet1")  # Adjust if your sheet name is different
-
-# Clear and update
+# --- Step 5: Export to Google Sheet ---
 worksheet.clear()
-set_with_dataframe(worksheet, df)
+set_with_dataframe(worksheet, df_final)
 
-print("✅ Updated existing sheet!")
-
+# --- Done ---
+print(f"✅ Added {len(df_filtered_new)} new records on top of {len(df_existing)} existing records.")
+print("✅ Google Sheet successfully updated!")
