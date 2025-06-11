@@ -18,15 +18,24 @@ client = gspread.authorize(creds)
 spreadsheet = client.open_by_url(GOOGLE_SHEET_URL)
 worksheet = spreadsheet.worksheet(SHEET_NAME)
 
-# Load existing Google Sheet data into DataFrame
+# Load existing data
 df_existing = get_as_dataframe(worksheet, evaluate_formulas=True)
 df_existing = df_existing.dropna(how="all").dropna(axis=1, how="all")
 
-# Remove section labels if present
-if 'id' in df_existing.columns:
+# Remove section labels
+if "id" in df_existing.columns:
     df_existing = df_existing[~df_existing['id'].astype(str).str.lower().isin(['new news', 'existing news'])]
 
-# --- Step 2: Pull fresh data from World Bank API ---
+# --- Step 1.5: Remove expired entries from df_existing ---
+if "Submission Deadline" in df_existing.columns:
+    try:
+        df_existing['Submission Deadline'] = pd.to_datetime(df_existing['Submission Deadline'], errors='coerce')
+        today = pd.Timestamp.now().normalize()
+        df_existing = df_existing[df_existing['Submission Deadline'] >= today]
+    except Exception as e:
+        print(f"⚠️ Failed to filter expired submission deadlines: {e}")
+
+# --- Step 2: Pull new data from World Bank API ---
 BASE_URL = "https://search.worldbank.org/api/v2/procnotices"
 PARAMS = {
     "format": "json",
@@ -44,7 +53,7 @@ page_count = 0
 while page_count < MAX_PAGES and len(notices_data) < MAX_RECORDS:
     response = requests.get(BASE_URL, params=PARAMS)
     if response.status_code != 200:
-        print(f"⚠️ Request failed with status {response.status_code}.")
+        print(f"⚠️ Request failed with status {response.status_code}")
         break
 
     data = response.json()
@@ -88,12 +97,12 @@ while page_count < MAX_PAGES and len(notices_data) < MAX_RECORDS:
 df_new = pd.DataFrame(notices_data)
 
 # --- Step 3: Identify new records ---
-if not df_existing.empty and 'id' in df_existing.columns:
-    df_filtered_new = df_new[~df_new['id'].isin(df_existing['id'])]
+if not df_existing.empty and "id" in df_existing.columns:
+    df_filtered_new = df_new[~df_new["id"].isin(df_existing["id"])]
 else:
     df_filtered_new = df_new.copy()
 
-# --- Step 4: Build final DataFrame with section headers ---
+# --- Step 4: Combine new + existing with section headers ---
 rows = []
 
 if not df_filtered_new.empty:
@@ -107,7 +116,7 @@ if not df_existing.empty:
 columns = df_new.columns if not df_new.empty else df_existing.columns
 df_final = pd.DataFrame(rows, columns=columns)
 
-# --- Step 5: Export to Google Sheet ---
+# --- Step 5: Write to Google Sheet ---
 worksheet.clear()
 set_with_dataframe(worksheet, df_final)
 
